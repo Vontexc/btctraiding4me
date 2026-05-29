@@ -456,7 +456,7 @@ const macdChart = new Chart($('macdChart'), {
         type: 'bar',
         label: 'Histogram',
         data: [],
-        backgroundColor: ctx => ctx.raw >= 0 ? 'rgba(63,185,80,.75)' : 'rgba(248,81,73,.75)',
+        backgroundColor: ctx => ctx.raw == null ? 'transparent' : (ctx.raw >= 0 ? 'rgba(63,185,80,.75)' : 'rgba(248,81,73,.75)'),
         borderColor: ctx => ctx.raw >= 0 ? '#3fb950' : '#f85149',
         borderWidth: 0.5,
         order: 2,

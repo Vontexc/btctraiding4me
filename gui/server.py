@@ -53,6 +53,7 @@ class BotState:
     losses: int = 0
     win_rate: float = 0.0
     mode: str = config.MODE.upper()
+    symbol: str = config.SYMBOL
     running: bool = False
     error: str = ""
     last_update: str = ""
@@ -214,8 +215,9 @@ def dashboard():
 @app.post("/api/start")
 def api_start():
     global _bot_thread
-    if _state.running:
-        return {"ok": False, "msg": "already running"}
+    with _lock:
+        if _bot_thread is not None and _bot_thread.is_alive():
+            return {"ok": False, "msg": "already running"}
     _stop_event.clear()
     _bot_thread = threading.Thread(target=_run_bot, daemon=True)
     _bot_thread.start()
