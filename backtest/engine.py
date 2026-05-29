@@ -107,7 +107,7 @@ def run_backtest(df: pd.DataFrame, cfg: BacktestConfig) -> BacktestResult:
             notional = entry_price * cfg.trade_size_btc
 
             if side == "LONG":
-                tp_usd = (cfg.tp_long / 100) * notional
+                tp_usd = cfg.tp_long
                 hc_usd = tp_usd * cfg.hard_cap_multiplier
                 sl_usd = -(cfg.stop_loss_pct / 100) * notional
 
@@ -130,7 +130,7 @@ def run_backtest(df: pd.DataFrame, cfg: BacktestConfig) -> BacktestResult:
                     exit_pnl, reason = tp_usd, "TP"
 
             else:  # SHORT
-                tp_usd = abs(cfg.tp_short / 100) * notional
+                tp_usd = abs(cfg.tp_short)
                 hc_usd = tp_usd * cfg.hard_cap_multiplier
                 sl_usd = -(cfg.stop_loss_pct / 100) * notional
 

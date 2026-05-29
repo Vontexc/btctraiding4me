@@ -20,7 +20,7 @@ def check_exit(position: Position, current_price: float, macd: MACDResult) -> tu
 
     # Hard cap: close if PnL exceeds TP * hard-cap multiplier
     if position.side == Signal.LONG:
-        tp_usd = (config.TP_LONG / 100) * notional
+        tp_usd = config.TP_LONG
         hard_cap_usd = tp_usd * config.HARD_CAP_MULTIPLIER
         sl_usd = -(config.STOP_LOSS_PCT / 100) * notional
 
@@ -38,7 +38,7 @@ def check_exit(position: Position, current_price: float, macd: MACDResult) -> tu
                 return True, CloseReason.TP
 
     else:  # SHORT
-        tp_usd = abs((config.TP_SHORT / 100) * notional)
+        tp_usd = abs(config.TP_SHORT)
         hard_cap_usd = tp_usd * config.HARD_CAP_MULTIPLIER
         sl_usd = -(config.STOP_LOSS_PCT / 100) * notional
 
