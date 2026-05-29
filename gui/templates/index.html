@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC MACD Bot</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Variables ──────────────────────────────────────────────────────────── */
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #1c2128;
+  --border:   #21262d;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --green:    #3fb950;
+  --red:      #f85149;
+  --blue:     #388bfd;
+  --orange:   #e3b341;
+  --amber:    #d29922;
+  --radius:   8px;
+  --mono:     'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+}
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+.header-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 600; letter-spacing: .3px;
+}
+.header-logo .btc { color: var(--amber); font-size: 18px; }
+.mode-pill {
+  padding: 2px 8px; border-radius: 20px;
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  background: rgba(56,139,253,.15); color: var(--blue); border: 1px solid var(--blue);
+}
+.mode-pill.live { background: rgba(248,81,73,.15); color: var(--red); border-color: var(--red); }
+
+.header-status {
+  display: flex; align-items: center; gap: 8px;
+}
+.status-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0;
+  transition: background .3s;
+}
+.status-dot.watching { background: var(--amber); animation: pulse 2s ease-in-out infinite; }
+.status-dot.long     { background: var(--green);  animation: pulse 2s ease-in-out infinite; }
+.status-dot.short    { background: var(--red);    animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: none; }
+  50% { opacity: .5; box-shadow: 0 0 6px currentColor; }
+}
+.status-label {
+  font-size: 12px; font-weight: 700; letter-spacing: 1px;
+  color: var(--muted); transition: color .3s;
+}
+.status-label.watching { color: var(--amber); }
+.status-label.long     { color: var(--green); }
+.status-label.short    { color: var(--red); }
+
+.header-right { display: flex; align-items: center; gap: 12px; }
+.last-update { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  padding: 6px 16px; border-radius: 6px; border: 1px solid;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: all .15s; letter-spacing: .3px;
+}
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn-start {
+  background: rgba(63,185,80,.1); color: var(--green);
+  border-color: rgba(63,185,80,.4);
+}
+.btn-start:not(:disabled):hover { background: rgba(63,185,80,.2); }
+.btn-stop {
+  background: rgba(248,81,73,.1); color: var(--red);
+  border-color: rgba(248,81,73,.4);
+}
+.btn-stop:not(:disabled):hover { background: rgba(248,81,73,.2); }
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.main { padding: 16px 20px; max-width: 1600px; margin: 0 auto; }
+
+/* ── Error banner ────────────────────────────────────────────────────────── */
+.error-banner {
+  display: none; margin-bottom: 12px;
+  padding: 10px 14px; border-radius: var(--radius);
+  background: rgba(248,81,73,.1); border: 1px solid rgba(248,81,73,.3);
+  color: var(--red); font-size: 12px;
+}
+
+/* ── Stat cards grid ─────────────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px; margin-bottom: 12px;
+}
+@media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .stats-grid { grid-template-columns: 1fr; } }
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.card-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 10px;
+}
+
+/* ── Price card ──────────────────────────────────────────────────────────── */
+.price-value {
+  font-family: var(--mono);
+  font-size: 28px; font-weight: 700;
+  letter-spacing: -1px; line-height: 1.1;
+  transition: color .3s;
+}
+.price-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* ── MACD card ───────────────────────────────────────────────────────────── */
+.macd-rows { display: flex; flex-direction: column; gap: 6px; }
+.macd-row  { display: flex; justify-content: space-between; align-items: center; }
+.macd-key  { font-size: 11px; color: var(--muted); }
+.macd-val  { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+
+/* ── Position card ───────────────────────────────────────────────────────── */
+.pos-rows  { display: flex; flex-direction: column; gap: 6px; }
+.pos-row   { display: flex; justify-content: space-between; align-items: center; }
+.pos-key   { font-size: 11px; color: var(--muted); }
+.pos-val   { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.pos-empty { font-size: 13px; color: var(--muted); }
+.side-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: .5px;
+}
+.side-badge.long  { background: rgba(63,185,80,.15);  color: var(--green); }
+.side-badge.short { background: rgba(248,81,73,.15); color: var(--red);   }
+
+/* ── Colour helpers ──────────────────────────────────────────────────────── */
+.green { color: var(--green); }
+.red   { color: var(--red);   }
+.muted { color: var(--muted); }
+
+/* ── Flash animation ─────────────────────────────────────────────────────── */
+@keyframes flashGreen { 0% { background: rgba(63,185,80,.2); } 100% { background: transparent; } }
+@keyframes flashRed   { 0% { background: rgba(248,81,73,.2); } 100% { background: transparent; } }
+.flash-green { animation: flashGreen .6s ease; border-radius: 4px; }
+.flash-red   { animation: flashRed   .6s ease; border-radius: 4px; }
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+.charts-col { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.chart-card { padding: 14px 16px 10px; }
+.chart-wrap { position: relative; height: 160px; }
+.chart-wrap.tall { height: 180px; }
+
+/* ── Trade log ───────────────────────────────────────────────────────────── */
+.table-scroll { overflow-x: auto; }
+.trade-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12px; font-family: var(--mono);
+}
+.trade-table th {
+  text-align: left; padding: 8px 10px;
+  font-size: 10px; letter-spacing: 1px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.trade-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.trade-table tr:last-child td { border-bottom: none; }
+.trade-table tr.win  td:first-child { border-left: 2px solid var(--green); padding-left: 8px; }
+.trade-table tr.loss td:first-child { border-left: 2px solid var(--red);   padding-left: 8px; }
+.trade-table .empty-row { text-align: center; color: var(--muted); padding: 20px; }
+.reason-pill {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; background: var(--surface2); color: var(--muted);
+}
+
+/* ── Config strip ────────────────────────────────────────────────────────── */
+.config-strip {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  padding: 10px 16px; margin-bottom: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px; color: var(--muted);
+}
+.config-item span { color: var(--text); font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-logo">
+    <span class="btc">₿</span>
+    <span>BTC MACD BOT</span>
+    <span class="mode-pill" id="modePill">PAPER</span>
+  </div>
+
+  <div class="header-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-label" id="statusLabel">STOPPED</span>
+  </div>
+
+  <div class="header-right">
+    <span class="last-update" id="lastUpdate">—</span>
+    <button class="btn btn-start" id="btnStart" onclick="startBot()">▶ Start</button>
+    <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled>■ Stop</button>
+  </div>
+</header>
+
+<!-- ── Main ────────────────────────────────────────────────────────────── -->
+<main class="main">
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- Stat cards -->
+  <div class="stats-grid">
+
+    <!-- Price -->
+    <div class="card">
+      <div class="card-title">BTC / USDT</div>
+      <div class="price-value" id="price">$—</div>
+      <div class="price-sub" id="priceSub">Waiting for data…</div>
+    </div>
+
+    <!-- MACD -->
+    <div class="card">
+      <div class="card-title">MACD  <span style="font-weight:400;text-transform:none;letter-spacing:0" id="macdCross"></span></div>
+      <div class="macd-rows">
+        <div class="macd-row">
+          <span class="macd-key">DIF</span>
+          <span class="macd-val" id="difVal">—</span>
+        </div>
+        <div class="macd-row">
+          <span class="macd-key">DEA</span>
+          <span class="macd-val" id="deaVal">—</span>
+        </div>
+        <div class="macd-row">
+          <span class="macd-key">Histogram</span>
+          <span class="macd-val" id="histVal">—</span>
+        </div>
+        <div class="macd-row">
+          <span class="macd-key">Prev Hist</span>
+          <span class="macd-val muted" id="prevHistVal">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Position -->
+    <div class="card">
+      <div class="card-title">Position</div>
+      <div id="posEmpty" class="pos-empty">Kein offener Trade</div>
+      <div class="pos-rows" id="posOpen" style="display:none">
+        <div class="pos-row">
+          <span class="pos-key">Seite</span>
+          <span class="pos-val" id="posSide">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">Entry</span>
+          <span class="pos-val" id="posEntry">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">Unreal. P&L</span>
+          <span class="pos-val" id="posPnl">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">Peak P&L</span>
+          <span class="pos-val" id="posPeak">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account -->
+    <div class="card">
+      <div class="card-title">Account</div>
+      <div class="pos-rows">
+        <div class="pos-row">
+          <span class="pos-key">Bank</span>
+          <span class="pos-val" id="bank">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">Session P&L</span>
+          <span class="pos-val" id="sessionPnl">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">Win Rate</span>
+          <span class="pos-val" id="winRate">—</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-key">W / L</span>
+          <span class="pos-val" id="wl">0 / 0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-col">
+    <div class="card chart-card">
+      <div class="card-title">Price  (15m candles)</div>
+      <div class="chart-wrap tall">
+        <canvas id="priceChart"></canvas>
+      </div>
+    </div>
+    <div class="card chart-card">
+      <div class="card-title">MACD  —  DIF <span style="color:var(--blue)">●</span>  DEA <span style="color:var(--orange)">●</span>  Histogram</div>
+      <div class="chart-wrap">
+        <canvas id="macdChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config strip -->
+  <div class="config-strip" id="configStrip">
+    <div class="config-item">Symbol <span id="cfgSymbol">—</span></div>
+    <div class="config-item">TF <span id="cfgTf">—</span></div>
+    <div class="config-item">Size <span id="cfgSize">—</span> BTC</div>
+    <div class="config-item">TP Long <span id="cfgTpL">—</span></div>
+    <div class="config-item">TP Short <span id="cfgTpS">—</span></div>
+    <div class="config-item">SL <span id="cfgSl">—</span>%</div>
+    <div class="config-item">HC ×<span id="cfgHc">—</span></div>
+    <div class="config-item">Deep Swing <span id="cfgDs">—</span></div>
+  </div>
+
+  <!-- Trade log -->
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">Trade Log</div>
+    <div class="table-scroll">
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Zeit</th>
+            <th>Side</th>
+            <th>Entry $</th>
+            <th>Exit $</th>
+            <th>P&L</th>
+            <th>Grund</th>
+          </tr>
+        </thead>
+        <tbody id="tradeBody">
+          <tr><td colspan="6" class="empty-row">Noch keine Trades in dieser Session</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const fmt  = (n, dec=2) => Number(n).toLocaleString('de-DE', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+const fmtUsd  = n => '$' + fmt(n, 2);
+const fmtSigned = n => (n >= 0 ? '+$' : '-$') + fmt(Math.abs(n), 4);
+const fmtSignedPct = n => (n >= 0 ? '+' : '') + fmt(n, 2) + '%';
+const colClass  = n => n > 0 ? 'green' : n < 0 ? 'red' : 'muted';
+
+function flash(el, cls) {
+  el.classList.remove('flash-green', 'flash-red');
+  void el.offsetWidth; // reflow
+  el.classList.add(cls);
+}
+
+/* ── Chart.js setup ──────────────────────────────────────────────────────── */
+Chart.defaults.color = '#8b949e';
+Chart.defaults.font.family = "'SFMono-Regular','Consolas',monospace";
+Chart.defaults.font.size = 11;
+
+const gridColor  = 'rgba(48,54,61,0.8)';
+const tickColor  = '#8b949e';
+
+const priceChart = new Chart($('priceChart'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'BTC/USDT',
+      data: [],
+      borderColor: '#388bfd',
+      backgroundColor: ctx => {
+        const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, ctx.chart.height);
+        g.addColorStop(0,   'rgba(56,139,253,.18)');
+        g.addColorStop(1,   'rgba(56,139,253,.00)');
+        return g;
+      },
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.1,
+    }],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: { display: false },
+      y: {
+        position: 'right',
+        grid: { color: gridColor },
+        ticks: { color: tickColor, callback: v => '$' + v.toLocaleString() },
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1c2128',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        callbacks: {
+          label: ctx => ' ' + fmtUsd(ctx.raw),
+        },
+      },
+    },
+  },
+});
+
+const macdChart = new Chart($('macdChart'), {
+  type: 'bar',
+  data: {
+    labels: [],
+    datasets: [
+      {
+        type: 'bar',
+        label: 'Histogram',
+        data: [],
+        backgroundColor: ctx => ctx.raw >= 0 ? 'rgba(63,185,80,.75)' : 'rgba(248,81,73,.75)',
+        borderColor: ctx => ctx.raw >= 0 ? '#3fb950' : '#f85149',
+        borderWidth: 0.5,
+        order: 2,
+      },
+      {
+        type: 'line',
+        label: 'DIF',
+        data: [],
+        borderColor: '#388bfd',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.2,
+        order: 1,
+      },
+      {
+        type: 'line',
+        label: 'DEA',
+        data: [],
+        borderColor: '#e3b341',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.2,
+        order: 1,
+      },
+    ],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: { display: false },
+      y: {
+        position: 'right',
+        grid: { color: gridColor },
+        ticks: { color: tickColor },
+      },
+    },
+    plugins: {
+      legend: {
+        labels: { color: '#c9d1d9', boxWidth: 10, padding: 14 },
+      },
+      tooltip: {
+        backgroundColor: '#1c2128',
+        borderColor: '#30363d',
+        borderWidth: 1,
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: ${Number(ctx.raw).toFixed(4)}`,
+        },
+      },
+    },
+  },
+});
+
+function pushChart(chart, labels, ...datasets) {
+  chart.data.labels = labels;
+  datasets.forEach((d, i) => { chart.data.datasets[i].data = d; });
+  chart.update('none');
+}
+
+/* ── Dashboard update ────────────────────────────────────────────────────── */
+let prevPrice = 0;
+
+function updateDashboard(d) {
+  // Header
+  const sl = $('statusLabel');
+  const sd = $('statusDot');
+  const s  = (d.status || 'STOPPED').toLowerCase();
+  sl.textContent = d.status;
+  sl.className   = 'status-label ' + s;
+  sd.className   = 'status-dot '   + s;
+
+  $('modePill').textContent  = d.mode;
+  $('modePill').className    = 'mode-pill' + (d.mode === 'LIVE' ? ' live' : '');
+  $('lastUpdate').textContent = d.last_update ? 'Updated ' + d.last_update : '';
+
+  $('btnStart').disabled = d.running;
+  $('btnStop').disabled  = !d.running;
+
+  // Error
+  const eb = $('errorBanner');
+  if (d.error) { eb.textContent = '⚠ ' + d.error; eb.style.display = 'block'; }
+  else         { eb.style.display = 'none'; }
+
+  // Price
+  const pEl = $('price');
+  if (d.price && d.price !== prevPrice) {
+    pEl.textContent = fmtUsd(d.price);
+    pEl.className   = 'price-value ' + colClass(d.price - prevPrice);
+    flash(pEl, d.price > prevPrice ? 'flash-green' : 'flash-red');
+    prevPrice = d.price;
+  }
+  $('priceSub').textContent = d.symbol || '';
+
+  // MACD
+  if (d.dif !== 0 || d.dea !== 0) {
+    const hcls = colClass(d.histogram);
+    $('difVal').textContent  = d.dif.toFixed(4);
+    $('difVal').className    = 'macd-val ' + colClass(d.dif);
+    $('deaVal').textContent  = d.dea.toFixed(4);
+    $('deaVal').className    = 'macd-val ' + colClass(d.dea);
+    $('histVal').textContent = d.histogram.toFixed(4);
+    $('histVal').className   = 'macd-val ' + hcls;
+    $('prevHistVal').textContent = d.prev_histogram.toFixed(4);
+    $('prevHistVal').className   = 'macd-val muted';
+
+    // Crossover badge
+    const cross = $('macdCross');
+    if (d.prev_histogram <= 0 && d.histogram > 0)
+      cross.innerHTML = '<span style="color:var(--green);font-size:10px">▲ LONG crossover</span>';
+    else if (d.prev_histogram >= 0 && d.histogram < 0)
+      cross.innerHTML = '<span style="color:var(--red);font-size:10px">▼ SHORT crossover</span>';
+    else
+      cross.textContent = '';
+  }
+
+  // Position
+  if (d.side) {
+    $('posEmpty').style.display = 'none';
+    $('posOpen').style.display  = '';
+    $('posSide').innerHTML = `<span class="side-badge ${d.side.toLowerCase()}">${d.side}</span>`;
+    $('posEntry').textContent = fmtUsd(d.entry_price);
+    $('posPnl').textContent   = fmtSigned(d.unrealised_pnl) + ' (' + fmtSignedPct(d.pnl_pct) + ')';
+    $('posPnl').className     = 'pos-val ' + colClass(d.unrealised_pnl);
+    $('posPeak').textContent  = fmtSigned(d.peak_pnl);
+    $('posPeak').className    = 'pos-val ' + colClass(d.peak_pnl);
+  } else {
+    $('posEmpty').style.display = '';
+    $('posOpen').style.display  = 'none';
+  }
+
+  // Account
+  $('bank').textContent       = fmtUsd(d.bank);
+  const spEl = $('sessionPnl');
+  spEl.textContent = fmtSigned(d.session_pnl);
+  spEl.className   = 'pos-val ' + colClass(d.session_pnl);
+  $('winRate').textContent = d.wins + d.losses > 0 ? d.win_rate + '%' : '—';
+  $('wl').textContent      = d.wins + ' / ' + d.losses;
+
+  // Charts
+  if (d.chart_labels && d.chart_labels.length) {
+    pushChart(priceChart, d.chart_labels, d.chart_close);
+    pushChart(macdChart,  d.chart_labels, d.chart_histogram, d.chart_dif, d.chart_dea);
+  }
+
+  // Trade log
+  if (d.trades && d.trades.length) {
+    const rows = d.trades.map(t => {
+      const cls = t.pnl >= 0 ? 'win' : 'loss';
+      const pnlCls = t.pnl >= 0 ? 'green' : 'red';
+      const sc = t.side === 'LONG' ? 'long' : 'short';
+      return `<tr class="${cls}">
+        <td>${t.time}</td>
+        <td><span class="side-badge ${sc}">${t.side}</span></td>
+        <td>${fmtUsd(t.entry)}</td>
+        <td>${fmtUsd(t.exit_price)}</td>
+        <td class="${pnlCls}">${fmtSigned(t.pnl)}</td>
+        <td><span class="reason-pill">${t.reason}</span></td>
+      </tr>`;
+    }).join('');
+    $('tradeBody').innerHTML = rows;
+  }
+}
+
+/* ── Config values (fetched once on load) ────────────────────────────────── */
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) return;
+    const c = await r.json();
+    $('cfgSymbol').textContent = c.symbol   || '—';
+    $('cfgTf').textContent     = c.timeframe || '—';
+    $('cfgSize').textContent   = c.trade_size_btc ?? '—';
+    $('cfgTpL').textContent    = '$' + (c.tp_long ?? '—');
+    $('cfgTpS').textContent    = '$' + Math.abs(c.tp_short ?? 0);
+    $('cfgSl').textContent     = c.stop_loss_pct ?? '—';
+    $('cfgHc').textContent     = c.hard_cap_multiplier ?? '—';
+    $('cfgDs').textContent     = c.deep_swing ? 'ON' : 'OFF';
+  } catch (_) {}
+}
+
+/* ── WebSocket with auto-reconnect ───────────────────────────────────────── */
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = e => { try { updateDashboard(JSON.parse(e.data)); } catch(_){} };
+  ws.onclose   = () => setTimeout(connectWS, 2000);
+  ws.onerror   = () => ws.close();
+}
+
+/* ── Bot controls ────────────────────────────────────────────────────────── */
+async function startBot() {
+  $('btnStart').disabled = true;
+  await fetch('/api/start', { method: 'POST' });
+}
+async function stopBot() {
+  $('btnStop').disabled = true;
+  await fetch('/api/stop', { method: 'POST' });
+}
+
+/* ── Init ────────────────────────────────────────────────────────────────── */
+connectWS();
+loadConfig();
+</script>
+</body>
+</html>
